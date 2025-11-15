@@ -637,7 +637,7 @@ function parseAnyTime(val){
 
 async function loadDefault() {
   try {
-    const url = 'https://raw.githubusercontent.com/Drybones3363/TradeGamba/refs/heads/main/Replays/NQ-09-25.Last.txt';
+    const url = 'https://raw.githubusercontent.com/Drybones3363/TradeGamba/refs/heads/main/Replays/NQ-09-25.Last.csv';
     fetch(url).then(r=>r.text()).then((text)=>{
       handleFile(text);
     });
