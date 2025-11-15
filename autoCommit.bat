@@ -4,3 +4,4 @@ git push --set-upstream origin master
 git add -A
 git commit -m "Auto-commit"
 git push origin main
+pause
