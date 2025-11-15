@@ -85,10 +85,13 @@ You can feed any features you compute from your 2-min chart (VWAP distance,
 Provide them as a dict of floats. Register the keys below so the model knows the order.
 """
 
-FEATURE_KEYS = [
-    "dist_to_ema21_pts",
-    "ema21_slope",
-]
+FEATURE_KEYS = []
+for i in range(100):
+    FEATURE_KEYS.append(f"candle_{i}_open")
+    FEATURE_KEYS.append(f"candle_{i}_high")
+    FEATURE_KEYS.append(f"candle_{i}_low")
+    FEATURE_KEYS.append(f"candle_{i}_close")
+    FEATURE_KEYS.append(f"candle_{i}_volume")
 
 def features_to_vector(feat: Dict[str, float]) -> np.ndarray:
     vec = np.array([feat.get(k, 0.0) for k in FEATURE_KEYS], dtype=np.float32)
@@ -282,7 +285,6 @@ class ScoringModel:
         X = np.stack([features_to_vector(fd) for fd in feature_dicts], axis=0)
         A = np.array(actions, dtype=np.int64)
         R = np.array(rewards, dtype=np.float32)
-        print(feature_dicts,A,R)
         self.agent.train_batch(X, A, R, iters=iters)
 
 

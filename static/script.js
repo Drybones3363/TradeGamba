@@ -4,9 +4,11 @@ const SL_POINTS = 20;
 const WINDOW_BACK = 100;   // bars shown before decision point
 const LOOKAHEAD_MAX = 600;  // max bars to search for outcome after entry
 const TICK_SIZE = 0.25;    // NQ tick size
+const SESSION_TZ_OFFSET_MIN = -240;
 /* ========================= */
 
-let lwcChart, candleSeries, entryLine, tpLine, slLine, ema21Series;
+let lwcChart, candleSeries, entryLine, tpLine, slLine, ema9Series, ema21Series;
+let volumeChart, volumeSeries;
 let animTimer = null;
 let rounds = [];      // array of { bars: [{time,open,high,low,close}], entryIndex }
 let roundIdx = 0;
@@ -18,24 +20,56 @@ let entryMarker = null;
 init();
 
 function init(){
-  lwcChart = LightweightCharts.createChart(document.getElementById('chart'), {
+  const priceContainer  = document.getElementById('priceChart');
+  const volumeContainer = document.getElementById('volumeChart');
+
+  lwcChart = LightweightCharts.createChart(priceContainer, {
     layout: { background: { color: '#141821' }, textColor: '#dbe2ea' },
     grid: { vertLines: { color: '#1c2333' }, horzLines: { color: '#1c2333' } },
     rightPriceScale: { borderColor: '#222b' },
     timeScale: {
       borderColor: '#222b',
-      rightOffset: 30,  // 👈 adds ~30 bars of empty space on the right
+      rightOffset: 30,
       rightBarStaysOnScroll: true
     },
     crosshair: { mode: 1 }
   });
   lwcChart.timeScale().applyOptions({ rightOffset: 30 });
+
   candleSeries = lwcChart.addCandlestickSeries({
     upColor: '#26a69a', downColor: '#ef5350',
     wickUpColor: '#26a69a', wickDownColor: '#ef5350',
     borderVisible: false
   });
-  // --- Add EMA21 line ---
+
+  // --- new volume chart below ---
+  volumeChart = LightweightCharts.createChart(volumeContainer, {
+    layout: { background: { color: '#141821' }, textColor: '#dbe2ea' },
+    grid: { vertLines: { color: '#1c2333' }, horzLines: { color: '#1c2333' } },
+    rightPriceScale: { borderColor: '#222b' },
+    timeScale: {
+      borderColor: '#222b',
+      rightBarStaysOnScroll: true
+    }
+  });
+
+  volumeSeries = volumeChart.addHistogramSeries({
+    priceFormat: { type: 'volume' },
+    color: '#4682B4'
+  });
+
+  // sync x-axis (time) between price & volume
+  const priceTimeScale = lwcChart.timeScale();
+  const volTimeScale   = volumeChart.timeScale();
+
+  priceTimeScale.subscribeVisibleLogicalRangeChange(logicalRange => {
+    volTimeScale.setVisibleLogicalRange(logicalRange);
+  });
+  ema9Series = lwcChart.addLineSeries({
+    color: '#00d7ff', // gold color for visibility
+    lineWidth: 1,
+    priceLineVisible: false,
+  });
   ema21Series = lwcChart.addLineSeries({
     color: '#ffd700', // gold color for visibility
     lineWidth: 1,
@@ -43,7 +77,7 @@ function init(){
   });
 
   // ---- on-chart hover time label ----
-  const chartEl = document.getElementById('chart');
+  const chartEl = document.getElementById('priceChart');
   const timeHint = document.createElement('div');
   timeHint.id = 'timeHint';
   Object.assign(timeHint.style, {
@@ -66,10 +100,17 @@ function init(){
   const pad2 = (n)=> String(n).padStart(2,'0');
   function fmtTS(sec){
     const d = new Date(sec * 1000);
+    let minutesLocal = d.getHours() * 60 + d.getMinutes();
+    let minutesSession = (minutesLocal + SESSION_TZ_OFFSET_MIN + 24*60) % (24*60);
+
+    const sessHour = Math.floor(minutesSession / 60);
+    const sessMin  = minutesSession % 60;
+
     const Y = d.getFullYear(), M = pad2(d.getMonth()+1), D = pad2(d.getDate());
-    const h = pad2(d.getHours()), m = pad2(d.getMinutes());
+    const h = pad2(sessHour),  m = pad2(sessMin);
     return `${Y}-${M}-${D} ${h}:${m}`;
   }
+
 
   lwcChart.subscribeCrosshairMove(param => {
     if (!param || !param.time) { timeHint.textContent = 'Time: —'; return; }
@@ -173,8 +214,16 @@ function showRound(){
   const viewBars = r.bars.slice(start, r.entryIndex + 1);
 
   candleSeries.setData(viewBars);
-  const emaData = computeEMA(viewBars, 21);
-  ema21Series.setData(emaData);
+  lwcChart.timeScale().fitContent();
+  volumeSeries.setData(viewBars.map(b => ({
+    time: b.time,
+    value: Number.isFinite(b.volume) ? b.volume : 0
+  })));
+  volumeChart.timeScale().fitContent();
+  const emaData9 = computeEMA(viewBars, 9);
+  ema9Series.setData(emaData9);
+  const emaData21 = computeEMA(viewBars, 21);
+  ema21Series.setData(emaData21);
   lwcChart.timeScale().fitContent();
 
   clearOutcomeLines();
@@ -266,7 +315,13 @@ function choose(side){
     // extend the visible bars by one
     const slice = r.bars.slice(startIdx, shownEnd);
     candleSeries.setData(slice);
+    volumeSeries.setData(slice.map(b => ({
+      time: b.time,
+      value: Number.isFinite(b.volume) ? b.volume : 0
+    })));
+
     lwcChart.timeScale().fitContent();
+    volumeChart.timeScale().fitContent();
 
     // evaluate trailing trigger & exit checks at the *new* bar
     const i = shownEnd - 1;
@@ -390,9 +445,17 @@ function snapToTick(price){
 
 function isSessionTime(tsSec){
   // tsSec is unix seconds already (normalizeBar does this)
-  const d = new Date(tsSec * 1000);           // local time; you’re ET
-  const minutes = d.getHours() * 60 + d.getMinutes();
-  return minutes >= (9*60 + 30) && minutes <= (15*60 + 30); // 9:30–15:30
+  const d = new Date(tsSec * 1000); // interpreted as local time
+  
+  // Local minutes-from-midnight
+  let minutesLocal = d.getHours() * 60 + d.getMinutes();
+  
+  // Shift into "session" timezone (e.g., ET) using the offset.
+  // Add 24h before modulo so negative offsets don't go negative.
+  let minutesSession = (minutesLocal + SESSION_TZ_OFFSET_MIN + 24*60) % (24*60);
+
+  // Now compare against *session* time (9:30–15:30)
+  return minutesSession >= (9*60 + 30) && minutesSession <= (15*60 + 30);
 }
 
 
@@ -504,8 +567,6 @@ async function handleFile(text){
   }
 }
 
-// Accepts many NT time formats: epoch sec/ms, 'yyyy-MM-dd HH:mm[:ss]',
-// 'MM/dd/yyyy HH:mm[:ss]', or ISO. Returns null if invalid.
 function normalizeBar(b){
   const t = parseAnyTime(b.time);
   if (!t || !isFinite(t)) return null;
@@ -513,7 +574,18 @@ function normalizeBar(b){
   const O = +b.open, H = +b.high, L = +b.low, C = +b.close;
   if (![O,H,L,C].every(Number.isFinite)) return null;
 
-  return { time: Math.floor(t/1000), open: O, high: H, low: L, close: C, volume: b.volume ?? 0 };
+  // 🔒 Force volume to be a finite number
+  const Vraw = +b.volume;
+  const V = Number.isFinite(Vraw) ? Vraw : 0;
+
+  return {
+    time: Math.floor(t / 1000),
+    open:  O,
+    high:  H,
+    low:   L,
+    close: C,
+    volume: V
+  };
 }
 
 function parseAnyTime(val){
@@ -565,7 +637,7 @@ function parseAnyTime(val){
 
 async function loadDefault() {
   try {
-    const url = 'https://raw.githubusercontent.com/Drybones3363/TradeGamba/refs/heads/main/Replays/NQ-09-25.Last.txt';
+    const url = 'https://raw.githubusercontent.com/Drybones3363/TradeGamba/refs/heads/main/Replays/NQ-09-25.Last.csv';
     fetch(url).then(r=>r.text()).then((text)=>{
       handleFile(text);
     });

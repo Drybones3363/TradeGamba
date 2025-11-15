@@ -1,9 +1,17 @@
+
+
+MODEL_FILE = "model1"
+
+
 from flask import Flask, request, jsonify, send_from_directory
 import numpy as np
 from learningAI import SetupEnv, StrategyConfig, ScoringModel
 from AITranscribe import *
 from flask_cors import CORS
 import os
+
+def extractFeatures(bars):
+    return extract_features_raw_ohlcv(bars)
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -16,13 +24,13 @@ app.jinja_env.cache = {}
 cfg = StrategyConfig()
 learner = SetupEnv(cfg)
 model = ScoringModel()  # add this near learner initialization
-model.agent.load("model.pkl")
+model.agent.load(MODEL_FILE+".pkl")
 
 @app.route("/score", methods=["POST"])
 def score():
     data = request.get_json()
     bars = data["bars"]
-    feats = extract_features_ema21(bars)
+    feats = extractFeatures(bars)
     score_val = model.score_setup(feats)
     return jsonify({"score": score_val})
 
@@ -38,7 +46,7 @@ def train():
     lows  = np.array([b['low']  for b in bars[1:]], dtype=np.float32)
 
     # features from the full window you sent
-    feats = extract_features_ema21(bars)
+    feats = extractFeatures(bars)
 
     # compute rewards for each possible action at this setup
     actions = [-1, 0, 1]  # short / skip / long
@@ -50,7 +58,7 @@ def train():
 
     # train on this one setup by duplicating features for each action
     model.train_on_batch([feats, feats, feats], actions, rewards, iters=1)
-    model.agent.save("model.pkl")
+    model.agent.save(MODEL_FILE+".pkl")
 
     # optional: return updated score for UI
     new_score = model.score_setup(feats)
