@@ -1,12 +1,12 @@
 import numpy as np
 
-def extract_features_ema21(bars: list, period: int = 21) -> dict:
+def extract_features(bars: list) -> dict:
     """
     Convert [open, high, low, close, volume] bars into minimal features:
     - dist_to_ema21_pts: last close - EMA21
     - ema21_slope: average change in EMA21 over last 5 bars
     """
-    if len(bars) < period + 5:
+    if len(bars) < 21 + 5:
         raise ValueError("Need at least period+5 bars for EMA slope calculation")
 
     # Extract closes
@@ -14,7 +14,7 @@ def extract_features_ema21(bars: list, period: int = 21) -> dict:
 
     # --- Compute EMA21 ---
     ema = np.zeros_like(closes)
-    alpha = 2 / (period + 1)
+    alpha = 2 / (21 + 1)
     ema[0] = closes[0]
     for i in range(1, len(closes)):
         ema[i] = alpha * closes[i] + (1 - alpha) * ema[i - 1]
