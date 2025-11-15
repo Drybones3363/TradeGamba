@@ -108,7 +108,7 @@ class TinyActorCritic:
       - Value V(s) (baseline)
     Trains with REINFORCE + value regression.
     """
-    def __init__(self, n_features: int, hidden: int = 32, seed: int = 42):
+    def __init__(self, n_features: int, hidden: int = 512, seed: int = 42):
         rng = np.random.default_rng(seed)
         self.W1 = rng.normal(0, 0.1, size=(n_features, hidden))
         self.b1 = np.zeros((hidden,))
@@ -116,7 +116,7 @@ class TinyActorCritic:
         self.bp = np.zeros((3,))
         self.Wv = rng.normal(0, 0.1, size=(hidden, 1))  # value head
         self.bv = np.zeros((1,))
-        self.lr = 1e-3
+        self.lr = 1e-4
 
     def save(self, path="model.pkl"):
         data = {
@@ -268,7 +268,7 @@ class ScoringModel:
     Wraps the RL agent to offer a single call:
       score = [-100..100] for given features.
     """
-    def __init__(self, feature_keys: List[str] = FEATURE_KEYS, hidden: int = 32, seed: int = 42):
+    def __init__(self, feature_keys: List[str] = FEATURE_KEYS, hidden: int = 512, seed: int = 42):
         self.feature_keys = feature_keys
         self.agent = TinyActorCritic(n_features=len(feature_keys), hidden=hidden, seed=seed)
 

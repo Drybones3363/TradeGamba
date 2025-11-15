@@ -75,5 +75,9 @@ def no_cache(response):
 def serve_index():
     return send_from_directory(app.static_folder, "index.html")
 
-if __name__ == "__main__":
+def deploy():
     app.run(host="0.0.0.0", port=5000)  # dev only
+
+
+if __name__ == "__main__":
+    deploy()
