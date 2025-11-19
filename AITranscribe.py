@@ -23,13 +23,16 @@ def extract_features_raw_ohlcv(bars: list, lookback: int = 100) -> dict:
     # Take the last N bars
     recent_bars = bars[-lookback:]
     
+    entryBar = bars[len(bars)-1]
+    entryPrice = entryBar['close']
+
     features = {}
     for i, bar in enumerate(recent_bars):
-        features[f"candle_{i}_open"] = float(bar['open'])
-        features[f"candle_{i}_high"] = float(bar['high'])
-        features[f"candle_{i}_low"] = float(bar['low'])
-        features[f"candle_{i}_close"] = float(bar['close'])
-        features[f"candle_{i}_volume"] = float(bar.get('volume', 0))
+        features[f"candle_{i}_open"] = float(bar['open'] - entryPrice)
+        features[f"candle_{i}_high"] = float(bar['high'] - entryPrice)
+        features[f"candle_{i}_low"] = float(bar['low'] - entryPrice)
+        features[f"candle_{i}_close"] = float(bar['close'] - entryPrice)
+        features[f"candle_{i}_volume"] = .001*float(bar.get('volume', 0))
     
     return features
 

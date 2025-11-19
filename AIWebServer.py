@@ -1,6 +1,6 @@
 
 
-MODEL_FILE = "model1"
+MODEL_FILE = "BruteforceA5999"
 
 
 from flask import Flask, request, jsonify, send_from_directory
@@ -58,7 +58,7 @@ def train():
 
     # train on this one setup by duplicating features for each action
     model.train_on_batch([feats, feats, feats], actions, rewards, iters=1)
-    model.agent.save(MODEL_FILE+".pkl")
+    #model.agent.save(MODEL_FILE+".pkl")
 
     # optional: return updated score for UI
     new_score = model.score_setup(feats)

@@ -10,16 +10,15 @@ from datetime import datetime
 import AIWebServer
 
 # Configuration
-SERVER_URL = "http://localhost:5000"
-CSV_FILE = "NQ-09-25.Last.csv"  # Change to your file
+CSV_FILE = "Replays/NQ-09-25.Last.csv"  # Change to your file
 WINDOW_BACK = 100  # Bars before entry
 LOOKAHEAD_MAX = 600  # Bars after entry to find outcome
 
 # Strategy config (match your JavaScript)
-TP_POINTS = 30.0
-SL_POINTS = 20.0
-TRAIL_TRIGGER = 10.0
-TRAIL_OFFSET = 2.0
+TP_POINTS = 20.0
+SL_POINTS = 10.0
+TRAIL_TRIGGER = 7.0
+TRAIL_OFFSET = 1.0
 
 def is_session_time(timestamp_str):
     """Check if timestamp is during trading session (9:30-15:30 EST)"""
@@ -27,7 +26,7 @@ def is_session_time(timestamp_str):
         # Parse: 20250701 144500
         dt = datetime.strptime(timestamp_str, "%Y%m%d %H%M%S")
         minutes = dt.hour * 60 + dt.minute
-        return 570 <= minutes <= 930  # 9:30 to 15:30
+        return 600 <= minutes <= 930  # 10:00 to 15:30
     except:
         return True  # If can't parse, include it
 
@@ -43,11 +42,6 @@ def parse_csv(filename):
             parts = line.split(';')
             if len(parts) < 5:
                 continue
-            
-            # Skip if not session time
-            if not is_session_time(parts[0]):
-                continue
-            
             try:
                 # Parse: timestamp;open;high;low;close;volume
                 dt = datetime.strptime(parts[0], "%Y%m%d %H%M%S")
@@ -122,6 +116,32 @@ def simulate_short(entry, highs, lows):
                   lows[min(LOOKAHEAD_MAX-1, len(lows)-1)]) / 2.0
     return entry - last_price
 
+
+
+def trainModel(data):
+    bars = data["bars"]
+    rewardInfo = data["rewards"]
+    entry = float(data["entry"])
+
+    # future highs/lows after the entry bar
+    highs = np.array([b['high'] for b in bars[1:]], dtype=np.float32)
+    lows  = np.array([b['low']  for b in bars[1:]], dtype=np.float32)
+
+    # features from the full window you sent
+    feats = extractFeatures(bars)
+
+    # compute rewards for each possible action at this setup
+    actions = [-1, 0, 1]  # short / skip / long
+    rewards = [
+        learner.step(-1, rewardInfo),
+        learner.step( 0, rewardInfo),
+        learner.step(+1, rewardInfo),
+    ]
+
+    # train on this one setup by duplicating features for each action
+    model.train_on_batch([feats, feats, feats], actions, rewards, iters=1)
+    model.agent.save(MODEL_FILE+".pkl")
+
 def train_setup(bars, entry_idx):
     """Train AI on one setup"""
     entry = bars[entry_idx]['close']
@@ -150,19 +170,8 @@ def train_setup(bars, entry_idx):
             'none': 0.0
         }
     }
-    
-    # Send to server
-    try:
-        response = requests.post(f"{SERVER_URL}/train", json=data, timeout=10)
-        result = response.json()
-        return {
-            'long_pnl': long_pnl,
-            'short_pnl': short_pnl,
-            'new_score': result.get('score', 0)
-        }
-    except Exception as e:
-        print(f"Error training: {e}")
-        return None
+
+    trainModel(data)
 
 def main():
     print("=" * 60)
@@ -229,7 +238,7 @@ def main():
         print(f"Win rate: {wins / (wins + losses) * 100:.1f}%")
     print(f"Total P&L: {total_pnl:.2f} points")
     print(f"Average P&L: {total_pnl / len(valid_entries):.2f} points")
-    print("\nModel saved to model.pkl")
+    print(f"\nModel saved to {MODEL_FILE}.pkl")
     print("Ready to use!")
 
 if __name__ == "__main__":

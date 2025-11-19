@@ -114,9 +114,9 @@ class TinyActorCritic:
         self.b1 = np.zeros((hidden,))
         self.Wp = rng.normal(0, 0.1, size=(hidden, 3))  # policy head
         self.bp = np.zeros((3,))
-        self.Wv = rng.normal(0, 0.1, size=(hidden, 1))  # value head
+        self.Wv = np.zeros((hidden, 1))
         self.bv = np.zeros((1,))
-        self.lr = 1e-4
+        self.lr = 4e-4
 
     def save(self, path="model.pkl"):
         data = {
@@ -146,10 +146,13 @@ class TinyActorCritic:
         value = h @ self.Wv + self.bv                       # (B, 1)
         return h, probs, value.squeeze(-1)
 
-    def act(self, x: np.ndarray) -> Tuple[int, float]:
+    def action_odds(self, x: np.ndarray) -> np.ndarray:
         x = x.reshape(1, -1)
         _, probs, _ = self._forward(x)
-        p = probs[0]
+        return probs[0]
+
+    def act(self, x: np.ndarray) -> Tuple[int, float]:
+        p = self.action_odds(x)
         action_idx = np.random.choice(3, p=p)
         # map index->action
         action_map = {0: -1, 1: 0, 2: 1}
@@ -249,7 +252,6 @@ class SetupEnv:
         self.cfg = cfg
 
     def step(self, action: int, rewards: dict) -> float:
-        print(rewards)
         if action == 0:
             return rewards['none']
         elif action == 1:
@@ -280,6 +282,10 @@ class ScoringModel:
         x = features_to_vector(feature_dict)
         act, _ = self.agent.act(x)
         return act
+
+    def get_action_odds(self, feature_dict: Dict[str, float]) -> np.ndarray:
+        x = features_to_vector(feature_dict)
+        return self.agent.action_odds(x)
 
     def train_on_batch(self, feature_dicts: List[Dict[str, float]], actions: List[int], rewards: List[float], iters: int = 1):
         X = np.stack([features_to_vector(fd) for fd in feature_dicts], axis=0)
