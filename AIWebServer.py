@@ -1,6 +1,6 @@
 
 
-MODEL_FILE = "BruteforceA5999"
+MODEL_FILE = "BruteforceC"
 
 
 from flask import Flask, request, jsonify, send_from_directory
@@ -24,7 +24,7 @@ app.jinja_env.cache = {}
 cfg = StrategyConfig()
 learner = SetupEnv(cfg)
 model = ScoringModel()  # add this near learner initialization
-model.agent.load(MODEL_FILE+".pkl")
+model.agent.load("Models/"+MODEL_FILE+".pkl")
 
 @app.route("/score", methods=["POST"])
 def score():
@@ -32,6 +32,7 @@ def score():
     bars = data["bars"]
     feats = extractFeatures(bars)
     score_val = model.score_setup(feats)
+    print(score_val)
     return jsonify({"score": score_val})
 
 @app.route("/train", methods=["POST"])
@@ -58,7 +59,7 @@ def train():
 
     # train on this one setup by duplicating features for each action
     model.train_on_batch([feats, feats, feats], actions, rewards, iters=1)
-    #model.agent.save(MODEL_FILE+".pkl")
+    #model.agent.save("Models/"+MODEL_FILE+".pkl")
 
     # optional: return updated score for UI
     new_score = model.score_setup(feats)

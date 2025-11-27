@@ -56,8 +56,7 @@ function algo(bars, entryIndex) {
 
   return {
     bars: bars.slice(0, endIdx + 1),
-    entryIndex,
-    // Optional: use these to skip recomputing in evaluate()
+    entryIndex: entryIndex,
     pre: { long: resLong, short: resShort }
   };
 }

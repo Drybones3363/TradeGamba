@@ -24,6 +24,11 @@
       border-radius: 12px;
       background: #141821;
     }
+    #aiChart {
+      height: 100px;      /* 👈 adjust this "short in height" */
+      border-radius: 12px;
+      background: #141821;
+    }
     .row { display:flex; gap:12px; margin-top:12px; align-items:center; flex-wrap:wrap; }
     button { padding:10px 16px; border:0; border-radius:10px; cursor:pointer; font-weight:600; }
     .long { background:#0d3; color:#031; }
@@ -39,11 +44,43 @@
   <script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
+
+<!-- === NAV BUTTON LIST === -->
+<div style="padding:16px; display:flex; gap:12px; flex-wrap:wrap;">
+  <a href="index.html">
+    <button style="
+      padding:10px 16px;
+      border:0;
+      border-radius:10px;
+      background:#2a3243;
+      color:#cfd6e3;
+      font-weight:600;
+      cursor:pointer;">
+      Trade Quiz
+    </button>
+  </a>
+
+  <a href="daytrade.html">
+    <button style="
+      padding:10px 16px;
+      border:0;
+      border-radius:10px;
+      background:#00a8ff;
+      color:#031;
+      font-weight:600;
+      cursor:pointer;">
+      Day Replay
+    </button>
+  </a>
+</div>
+<!-- === END NAV BUTTON LIST === -->
+
 <div class="wrap">
   <h2>NQ 2-min Quiz — 30pt TP / 20pt SL</h2>
   <div id="chart">
     <div id="priceChart"></div>
     <div id="volumeChart"></div>
+    <div id="aiChart"></div>
   </div>
 
 

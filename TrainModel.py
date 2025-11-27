@@ -1,5 +1,5 @@
 DEBUG_MODE = False
-MODEL_FILE = "BruteforceA"
+MODEL_FILE = "BruteforceC"
 CSV_FILE = "Replays/NQ-09-25.Last.csv"  # Change to your file
 NUM_GENERATIONS = 100000
 NUM_TRAINS = 1000
@@ -20,11 +20,25 @@ if DEBUG_MODE:
 
 
 
+import logging
 import numpy as np
 from datetime import datetime
 from learningAI import SetupEnv, StrategyConfig, ScoringModel
 from AITranscribe import *
 
+logging.basicConfig(
+    filename="Logs/"+MODEL_FILE+".log",
+    filemode="a",         # append
+    format="%(asctime)s - %(message)s",
+    level=logging.INFO
+)
+
+def logMsg(*args):
+    msg = ""
+    for v in args:
+        msg = msg + str(v) + ' '
+    logging.info(msg)
+    print(msg)
 
 
 def extractFeatures(bars):
@@ -34,17 +48,23 @@ cfg = StrategyConfig()
 learner = SetupEnv(cfg)
 model = ScoringModel()  # add this near learner initialization
 if not NEW_AI:
-    model.agent.load(MODEL_FILE+".pkl")
+    model.agent.load("Models/"+MODEL_FILE+".pkl")
 
 totalProfit = 0
 trialNum = 0
-genInfo = {'short': 0,'none': 0,'long': 0}
+genInfo = {}
+
+def incInDict(key):
+    global genInfo
+    if not key in genInfo:
+        genInfo[key] = 0
+    genInfo[key] = genInfo[key] + 1
 
 def newGeneration():
     global totalProfit
     totalProfit = 0
     global genInfo
-    genInfo = {'short': 0,'none': 0,'long': 0}
+    genInfo = {}
 
 def trainModel(trialInfo):
     bars = trialInfo["bars"]
@@ -68,11 +88,14 @@ def trainModel(trialInfo):
     global totalProfit
     totalProfit = totalProfit + reward
 
-    global genInfo
-    genInfo[actionTaken] = genInfo[actionTaken] + 1
+    incInDict(actionTaken)
+    incInDict(str(reward))
 
     if actionTaken == 'none':
-        reward = -1
+        betterChoice = rewardInfo['short'] > 10 or rewardInfo['long'] > 10
+        reward = betterChoice and -1 or 10
+    if reward < 0:
+        reward = reward * 3
 
     model.train_on_batch(
         [feats],              # list of one features dict
@@ -135,7 +158,7 @@ def simulate_long(bars, entry):
     tp = entry + TP_POINTS
     trailed = False
     
-    for i in range(min(LOOKAHEAD_MAX, len(bars))):
+    for i in range(1,min(LOOKAHEAD_MAX, len(bars))):
         hi, lo = bars[i]['high'], bars[i]['low']
         
         # Check SL first
@@ -154,7 +177,7 @@ def simulate_long(bars, entry):
     # Timeout
     last_price = (bars[min(LOOKAHEAD_MAX-1, len(bars)-1)]['high'] + 
                   bars[min(LOOKAHEAD_MAX-1, len(bars)-1)]['low']) / 2.0
-    return last_price - entry
+    return -1 #last_price - entry
 
 def simulate_short(bars, entry):
     """Simulate a short trade"""
@@ -162,7 +185,7 @@ def simulate_short(bars, entry):
     tp = entry - TP_POINTS
     trailed = False
     
-    for i in range(min(LOOKAHEAD_MAX, len(bars))):
+    for i in range(1,min(LOOKAHEAD_MAX, len(bars))):
         hi, lo = bars[i]['high'], bars[i]['low']
         
         # Check SL first
@@ -181,7 +204,7 @@ def simulate_short(bars, entry):
     # Timeout
     last_price = (bars[min(LOOKAHEAD_MAX-1, len(bars)-1)]['high'] + 
                   bars[min(LOOKAHEAD_MAX-1, len(bars)-1)]['low']) / 2.0
-    return entry - last_price
+    return -1 #entry - last_price
 
 def filterTrials(bars):
     minBarsNeeded = WINDOW_BACK + 1 + LOOKAHEAD_MAX
@@ -193,7 +216,7 @@ def filterTrials(bars):
         entryIndex = start + WINDOW_BACK - 1
         entry = 0
         priceMove = 0
-        while priceMove < 25 and entryIndex < len(bars):
+        while priceMove <= 0 and entryIndex < len(bars):
             entryIndex = entryIndex + 1
             entryBar = bars[entryIndex]
             entry = entryBar['close']
@@ -206,10 +229,10 @@ def filterTrials(bars):
                 abs(entry - bars[entryIndex+4]['close']),
                 abs(entry - bars[entryIndex+5]['close'])
             )
-        if entryIndex >= len(bars) or priceMove < 25:
+        if entryIndex >= len(bars) or priceMove <= 0:
             continue
-        barsSliced = bars[slice(entryIndex - 100,entryIndex + 10)]
-        barsSimulated = bars[slice(entryIndex,entryIndex + 10)]
+        barsSliced = bars[slice(entryIndex - 100,entryIndex)]
+        barsSimulated = bars[slice(entryIndex,entryIndex + LOOKAHEAD_MAX)]
         trialInfo['entryIndex'] = entryIndex
         trialInfo['entry'] = entry
         trialInfo['bars'] = barsSliced
@@ -234,14 +257,14 @@ def main():
         global totalProfit
         global genInfo
         genResults.append(totalProfit)
-        model.agent.save(MODEL_FILE+".pkl")
-        if (genNum+1) % 1000 == 0:
-            model.agent.save(MODEL_FILE+str(genNum+1)+".pkl")
-        print("Generation",genNum,":\t",totalProfit,genInfo)
+        model.agent.save("Models/"+MODEL_FILE+".pkl")
+        if (genNum+1) % 10000 == 0:
+            model.agent.save("Models/"+MODEL_FILE+str(genNum+1)+".pkl")
+        logMsg("Generation",genNum,":\t",totalProfit,genInfo)
 
-    print("RESULTS! ==================")
+    logMsg("RESULTS! ==================")
     for genNum in range(NUM_GENERATIONS):
-        print("Generation",genNum,genResults[genNum])
+        logMsg("Generation",genNum,genResults[genNum])
 
     return
 

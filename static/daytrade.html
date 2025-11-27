@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Day Trader Replay</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <style>
+    body { font-family: system-ui; margin:0; background:#0f1115; color:#eaeef2; }
+    .wrap { max-width:1100px; margin:0 auto; padding:16px; }
+    #chart {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    #priceChart {
+      height: 420px;
+      border-radius: 12px;
+      background: #141821;
+    }
+
+    #volumeChart {
+      height: 100px;      /* 👈 adjust this "short in height" */
+      border-radius: 12px;
+      background: #141821;
+    }
+    #aiChart {
+      height: 100px;      /* 👈 adjust this "short in height" */
+      border-radius: 12px;
+      background: #141821;
+    }
+    .row { display:flex; gap:12px; margin-top:12px; flex-wrap:wrap; }
+    button { padding:10px 16px; border:0; border-radius:10px; font-weight:600; cursor:pointer; }
+    .play { background:#2ecc71; color:#031; }
+    .pause { background:#f39c12; color:#300; }
+    .skip10 { background:#3498db; color:white; }
+    .trade { background:#e74c3c; color:white; }
+
+    .pill { background:#1b2433; padding:8px 12px; border-radius:999px; }
+  </style>
+
+  <script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+
+<body>
+<div style="padding:16px; display:flex; gap:12px; flex-wrap:wrap;">
+  <a href="index.html">
+    <button style="
+      padding:10px 16px;
+      border:0;
+      border-radius:10px;
+      background:#2a3243;
+      color:#cfd6e3;
+      font-weight:600;
+      cursor:pointer;">
+      Trade Quiz
+    </button>
+  </a>
+
+  <a href="daytrade.html">
+    <button style="
+      padding:10px 16px;
+      border:0;
+      border-radius:10px;
+      background:#00a8ff;
+      color:#031;
+      font-weight:600;
+      cursor:pointer;">
+      Day Replay
+    </button>
+  </a>
+</div>
+<div class="wrap">
+  <h2>Day Replay — Random Daily Playback</h2>
+
+  <div id="chart">
+    <div id="priceChart"></div>
+    <div id="volumeChart"></div>
+    <div id="aiChart"></div>
+  </div>
+
+  <div class="row">
+    <button id="btnPlay" class="play">▶ Play</button>
+    <button id="btnPause" class="pause">⏸ Pause</button>
+    <button id="btnSkip10" class="skip10">Skip +10 Bars</button>
+    <button id="btnTrade" class="trade">Take Trade (Algo)</button>
+  </div>
+
+  <div class="row">
+    <span class="pill" id="pillIndex">Bar: 0</span>
+    <span class="pill" id="pillTime">Time: —</span>
+    <span class="pill" id="pillAI">AI: —</span>
+    <span class="pill" id="pillDay">Day: —</span>
+  </div>
+
+  <div id="message" style="margin-top:12px;font-weight:600;"></div>
+</div>
+
+<script src="dayscript.js"></script>
+
+</body>
+</html>

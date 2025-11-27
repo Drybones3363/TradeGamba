@@ -18,7 +18,7 @@ def extract_features_raw_ohlcv(bars: list, lookback: int = 100) -> dict:
     This approach lets the neural network learn patterns directly from raw data.
     """
     if len(bars) < lookback:
-        raise ValueError(f"Need at least {lookback} bars for raw OHLCV extraction")
+        raise ValueError(f"Need at least {lookback} bars for raw OHLCV extraction: {len(bars)}")
     
     # Take the last N bars
     recent_bars = bars[-lookback:]

@@ -4,9 +4,8 @@ cd /d "%~dp0"
 
 rmdir static
 mkdir static
-copy algo.js static
-copy index.html static
-copy script.js static
+copy *.html static
+copy *.js static
 
 REM pip install flask-cors
 

@@ -9,6 +9,7 @@ const SESSION_TZ_OFFSET_MIN = -240;
 
 let lwcChart, candleSeries, entryLine, tpLine, slLine, ema9Series, ema21Series;
 let volumeChart, volumeSeries;
+let aiChart, aiSeries;
 let animTimer = null;
 let rounds = [];      // array of { bars: [{time,open,high,low,close}], entryIndex }
 let roundIdx = 0;
@@ -16,12 +17,15 @@ let score = 0, wins = 0, losses = 0;
 let canDecide = true;
 let entryMarker = null;
 
+let bars = [];
+
 
 init();
 
 function init(){
   const priceContainer  = document.getElementById('priceChart');
   const volumeContainer = document.getElementById('volumeChart');
+  const aiContainer = document.getElementById('aiChart');
 
   lwcChart = LightweightCharts.createChart(priceContainer, {
     layout: { background: { color: '#141821' }, textColor: '#dbe2ea' },
@@ -58,12 +62,29 @@ function init(){
     color: '#4682B4'
   });
 
+  aiChart = LightweightCharts.createChart(aiContainer, {
+    layout: { background: { color: '#141821' }, textColor: '#dbe2ea' },
+    grid: { vertLines: { color: '#1c2333' }, horzLines: { color: '#1c2333' } },
+    rightPriceScale: { borderColor: '#222b' },
+    timeScale: {
+      borderColor: '#222b',
+      rightBarStaysOnScroll: true
+    }
+  });
+
+  aiSeries = aiChart.addHistogramSeries({
+    priceFormat: { type: 'volume' },
+    color: '#4682B4'
+  });
+
   // sync x-axis (time) between price & volume
   const priceTimeScale = lwcChart.timeScale();
   const volTimeScale   = volumeChart.timeScale();
+  const aiTimeScale   = aiChart.timeScale();
 
   priceTimeScale.subscribeVisibleLogicalRangeChange(logicalRange => {
     volTimeScale.setVisibleLogicalRange(logicalRange);
+    aiTimeScale.setVisibleLogicalRange(logicalRange);
   });
   ema9Series = lwcChart.addLineSeries({
     color: '#00d7ff', // gold color for visibility
@@ -219,7 +240,7 @@ function showRound(){
     time: b.time,
     value: Number.isFinite(b.volume) ? b.volume : 0
   })));
-  volumeChart.timeScale().fitContent();
+
   const emaData9 = computeEMA(viewBars, 9);
   ema9Series.setData(emaData9);
   const emaData21 = computeEMA(viewBars, 21);
@@ -234,6 +255,34 @@ function showRound(){
     document.getElementById('aiPill').textContent = `AI: ${obj.score.toFixed(3)}`;
     document.getElementById('newAIPill').textContent = ` `;
   });
+
+  function toList(dict) {
+    let lst = new Array();
+    let i = 0;
+    while (dict[i]) {
+      lst.push(dict[i]);
+      i++;
+    }
+    return lst;
+  }
+  let aiInfo = {};
+  for (let i = start;i < WINDOW_BACK + 1;i++) {
+    const mainStart = r.mainEntryIndex;
+    const b = bars[mainStart - 100 + i];
+    const scoreBars = bars.slice(mainStart - 100 + i,mainStart + i);
+    getScore(scoreBars).then((obj)=>{
+      const score = obj.score;
+      aiInfo[i] = {
+        time: b.time,
+        value: score
+      };
+      const aiList = toList(aiInfo);
+      if (aiList.length >= 0) { //r.entryIndex + 1 - start) {
+        aiSeries.setData(aiList);
+        aiChart.timeScale().fitContent();
+      }
+    }); // Math.round(Math.random() * 200 - 100);
+  }
 
 }
 
@@ -409,35 +458,6 @@ if (bar && candleSeries) {
 
 }
 
-/* ======= Data: Random-walk generator (immediate play) ======= */
-function buildRandomRounds(n=50){
-  const rounds = [];
-  for (let k=0;k<n;k++){
-    const bars = [];
-    // start price around 16000
-    let p = 16000 + (Math.random() - 0.5) * 200;
-    const totalBars = WINDOW_BACK + 1 + LOOKAHEAD_MAX + 20;
-    for (let i=0;i<totalBars;i++){
-      // random 2-min candle with mild trend & volatility
-      const drift = (Math.random() - 0.5) * 2; // small drift
-      const vol = 6 + Math.random() * 10;      // candle range in points
-      const o = p;
-      const change = drift + (Math.random() - 0.5) * vol;
-      const c = snapToTick(o + change);
-      const hi = snapToTick(Math.max(o,c) + Math.random()*3);
-      const lo = snapToTick(Math.min(o,c) - Math.random()*3);
-      bars.push({
-        time: (Math.floor(Date.now()/1000) + i*120), // 2-min steps
-        open: o, high: hi, low: lo, close: c
-      });
-      p = c;
-    }
-    const entryIndex = WINDOW_BACK; // decision at end of history portion
-    rounds.push({ bars, entryIndex });
-  }
-  return rounds;
-}
-
 function snapToTick(price){
   const ticks = Math.round(price / TICK_SIZE);
   return ticks * TICK_SIZE;
@@ -460,7 +480,7 @@ function isSessionTime(tsSec){
 
 
 async function handleFile(text){
-  let bars = [];
+  bars = [];
 
   try {
     const lines = text.trim().split(/\r?\n/).filter(Boolean);
@@ -542,14 +562,17 @@ async function handleFile(text){
 
       const start = Math.round(Math.random() * range) + minBarsNeeded - (WINDOW_BACK + 1);
       const entryIndex = WINDOW_BACK;
-      const entryBar = dedup[start + entryIndex];
+      const mainEntryIndex = start + entryIndex;
+      const entryBar = dedup[mainEntryIndex];
 
       if (!entryBar || !isSessionTime(entryBar.time)) continue; // ⬅ only pick 9:30–3:30 entries
 
       const end   = start + (WINDOW_BACK + 1) + LOOKAHEAD_MAX;
       const slice = dedup.slice(start, end);
 
-      rounds.push(algo(slice, entryIndex));  // uses your precomputed outcomes
+      const info = algo(slice, entryIndex);
+      info.mainEntryIndex = mainEntryIndex;
+      rounds.push(info);  // uses your precomputed outcomes
     }
 
     if (!rounds.length) {
