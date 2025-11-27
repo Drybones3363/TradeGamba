@@ -1,5 +1,7 @@
 # Python cache
 __pycache__/
+Models/
+Logs/
 *.pyc
 *.pyo
 *.pyd
