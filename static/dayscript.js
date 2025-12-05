@@ -10,14 +10,9 @@ const SESSION_TZ_OFFSET_MIN = -240;
 let lwcChart, candleSeries, entryLine, tpLine, slLine, ema9Series, ema21Series;
 let volumeChart, volumeSeries;
 let aiChart, aiSeries;
-let animTimer = null;
-let rounds = [];      // array of { bars: [{time,open,high,low,close}], entryIndex }
-let roundIdx = 0;
-let score = 0, wins = 0, losses = 0;
-let canDecide = true;
-let entryMarker = null;
-
 let bars = [];
+let idx = 0;
+let timer = null;
 
 
 init();
@@ -148,43 +143,99 @@ function init(){
   });
 
 
-  // default: build 50 random-walk rounds so you can play instantly
-  //rounds = buildRandomRounds(50);
-  //showRound();
 
-  document.getElementById('btnLong').onclick = () => choose('long');
-  document.getElementById('btnShort').onclick = () => choose('short');
-  document.getElementById('btnSkip').onclick = () => handleSkip();
-  document.getElementById('btnNext').onclick = () => nextRound();
+  // Play
+  document.getElementById('btnPlay').onclick = ()=>{
+    if(timer) return;
+    timer = setInterval(()=>{
+      if(idx >= bars.length-1){
+        clearInterval(timer); timer=null;
+        setMsg("End of day.");
+        return;
+      }
+      idx++;
+      renderUpTo(idx);
+      getAIScore();
+    }, 500);
+  };
 
-  function handleSkip(){
-    setMsg('⏭️ Skipped. Press Next to continue.');
-    finalizeRoundUI();
+  // Pause
+  document.getElementById('btnPause').onclick = ()=>{
+    if(timer){ clearInterval(timer); timer=null; }
+  };
+
+  // Skip +10
+  document.getElementById('btnSkip10').onclick = ()=>{
+    idx = Math.min(idx+10, bars.length-1);
+    renderUpTo(idx);
+    getAIScore();
+  };
+
+  // ------------------
+  // Take Trade (algo)
+  // ------------------
+  document.getElementById('btnTrade').onclick = ()=>{
+    if(idx < 100){ setMsg("Need 100 bars before entry."); return; }
+
+    const windowBars = bars.slice(idx-100, idx+600);
+    const entryIndex = 100;
+
+    const res = algo(windowBars, entryIndex);
+    const long = res.pre.long;
+    const short = res.pre.short;
+
+    setMsg(
+      `Long: ${long.outcome} (${long.score.toFixed(1)} pts) — ` +
+      `Short: ${short.outcome} (${short.score.toFixed(1)} pts)`
+    );
+  };
+
+  async function handleFileInput(e) {
+      const file = e.target.files?.[0]; if (!file) return;
+      const text = await file.text();
+      handleFile(text);
   }
 
+  document.getElementById('fileInput').addEventListener('change', handleFileInput);
 
-  document.addEventListener('keydown', (e)=>{
-  if (e.key === 'ArrowUp'   && canDecide) choose('long');
-  if (e.key === 'ArrowDown' && canDecide) choose('short');
-  if (e.key === 'ArrowRight'){
-    if (canDecide) {
-      // treat ArrowRight as Skip before a decision
-      handleSkip();
-    } else {
-      // after result, ArrowRight advances to next round
-      nextRound();
-    }
-  }
-});
-
-async function handleFileInput(e) {
-    const file = e.target.files?.[0]; if (!file) return;
-    const text = await file.text();
-    handleFile(text);
 }
 
-document.getElementById('fileInput').addEventListener('change', handleFileInput);
+function getBarTime(bar) {
+  const tsSec = bar.time
+  const d = new Date(tsSec * 1000);
+  let minutesLocal = d.getHours() * 60 + d.getMinutes();
+  let minutesSession = (minutesLocal + SESSION_TZ_OFFSET_MIN + 24*60) % (24*60);
+  return minutesSession;
+}
 
+function loadRandomDay(){
+  let randomIndex = 0;
+
+  while (getBarTime(bars[randomIndex]) != 9*60 + 30) {
+    randomIndex = (randomIndex + 1) % bars.length
+  }
+  idx = randomIndex;
+
+  document.getElementById("pillDay").textContent = `Day: ${randomIndex}`;
+  renderUpTo(idx);
+  setMsg(`Loaded day`);
+}
+
+// -----------------------------
+// Replay controls
+// -----------------------------
+function renderUpTo(i){
+  const slice = bars.slice(0, i+1);
+  candleSeries.setData(slice);
+  volumeSeries.setData(slice.map(b=>({time:b.time, value:b.volume||0})));
+  updatePills();
+}
+
+function updatePills(){
+  document.getElementById('pillIndex').textContent = `Bar: ${idx}`;
+  if(bars[idx])
+    document.getElementById('pillTime').textContent =
+      `Time: ${new Date((bars[idx].time+60*SESSION_TZ_OFFSET_MIN)*1000).toLocaleTimeString()}`;
 }
 
 function computeEMA(bars, period = 21) {
@@ -200,283 +251,7 @@ function computeEMA(bars, period = 21) {
   return ema;
 }
 
-
-function setDecisionUI(active){
-  // active=true: enable Long/Short/Skip, hide Next
-  // active=false: disable Long/Short/Skip, show Next
-  canDecide = active;
-
-  document.getElementById('btnLong').disabled  = !active;
-  document.getElementById('btnShort').disabled = !active;
-  document.getElementById('btnSkip').disabled  = !active;
-
-  const nextBtn = document.getElementById('btnNext');
-  if (active) {
-    nextBtn.style.display = 'none';
-    nextBtn.disabled = true;
-  } else {
-    nextBtn.style.display = 'inline-block';
-    nextBtn.disabled = false;
-  }
-}
-
-function finalizeRoundUI(){
-  // Called right after showing a result (win/loss/timeout) OR after Skip
-  setDecisionUI(false);
-}
-
-
-function showRound(){
-  const r = rounds[roundIdx];
-  if (!r) { setMsg("Done! No more rounds."); return; }
-
-  // show only history up to entryIndex (decision point)
-  const start = Math.max(0, r.entryIndex - WINDOW_BACK);
-  const viewBars = r.bars.slice(start, r.entryIndex + 1);
-
-  candleSeries.setData(viewBars);
-  lwcChart.timeScale().fitContent();
-  volumeSeries.setData(viewBars.map(b => ({
-    time: b.time,
-    value: Number.isFinite(b.volume) ? b.volume : 0
-  })));
-
-  const emaData9 = computeEMA(viewBars, 9);
-  ema9Series.setData(emaData9);
-  const emaData21 = computeEMA(viewBars, 21);
-  ema21Series.setData(emaData21);
-  lwcChart.timeScale().fitContent();
-
-  clearOutcomeLines();
-  updatePills();
-  setMsg("Pick Long / Short / Skip.");
-  setDecisionUI(true);
-  const { score } = getScore(viewBars).then((obj)=>{
-    document.getElementById('aiPill').textContent = `AI: ${obj.score.toFixed(3)}`;
-    document.getElementById('newAIPill').textContent = ` `;
-  });
-
-  function toList(dict) {
-    let lst = new Array();
-    let i = 0;
-    while (dict[i]) {
-      lst.push(dict[i]);
-      i++;
-    }
-    return lst;
-  }
-  let aiInfo = {};
-  for (let i = start;i < WINDOW_BACK + 1;i++) {
-    const mainStart = r.mainEntryIndex;
-    const b = bars[mainStart - 100 + i];
-    const scoreBars = bars.slice(mainStart - 100 + i,mainStart + i);
-    getScore(scoreBars).then((obj)=>{
-      const score = obj.score;
-      aiInfo[i] = {
-        time: b.time,
-        value: score
-      };
-      const aiList = toList(aiInfo);
-      if (aiList.length >= 0) { //r.entryIndex + 1 - start) {
-        aiSeries.setData(aiList);
-        aiChart.timeScale().fitContent();
-      }
-    }); // Math.round(Math.random() * 200 - 100);
-  }
-
-}
-
-function updatePills(){
-  document.getElementById('roundPill').textContent = `Round: ${roundIdx + 1}`;
-  document.getElementById('scorePill').textContent = `Score: ${score}`;
-  document.getElementById('statsPill').textContent = `W/L: ${wins}/${losses}`;
-}
-
 function setMsg(s){ document.getElementById('message').textContent = s; }
-
-function choose(side){
-  const r = rounds[roundIdx];
-  const entryBar = r.bars[r.entryIndex];
-  const entry = entryBar.close;
-
-  // draw static guides first
-  drawEntryTP_SL(entry, side);
-
-  // --- pull predetermined outcome so scoring remains deterministic ---
-  const pre = r.pre ? (side === 'long' ? r.pre.long : r.pre.short) : null;
-  let outcome = pre?.outcome ?? 'timeout';
-  let resolveIdx = Number.isFinite(pre?.index) ? pre.index : (r.entryIndex + LOOKAHEAD_MAX);
-
-  const rewards = {
-    long: r.pre.long.score,
-    short: r.pre.short.score,
-    none: 0.0
-  };
-  let scoreDelta = Number.isFinite(pre?.score) ? pre.score : 0;
-
-  // UI: lock decision buttons during playback, hide Next until done
-  setDecisionUI(false);
-  document.getElementById('btnNext').style.display = 'none';
-  document.getElementById('btnNext').disabled = true;
-
-  // playback window
-  const startIdx = Math.max(0, r.entryIndex - WINDOW_BACK);
-  let shownEnd = r.entryIndex + 1; // start anim just after entry
-
-  // trailing state for the visual SL line
-  const trigger = side === 'long' ? entry + 10 : entry - 10;
-  const beTrail  = side === 'long' ? snapToTick(entry + 2) : snapToTick(entry - 2);
-  let slActive   = side === 'long' ? entry - SL_POINTS : entry + SL_POINTS;
-  let trailed    = false;
-
-  // ensure clean slate
-  if (animTimer) { clearInterval(animTimer); animTimer = null; }
-
-  // start animation: every 0.1s reveal one more bar until resolveIdx
-  animTimer = setInterval(()=>{
-    // stop if we've shown everything needed
-    if (shownEnd > Math.min(r.bars.length, resolveIdx + 1)) {
-      clearInterval(animTimer); animTimer = null;
-
-      // finalize W/L, score, message, and show Next
-      if (outcome === 'win') wins++;
-      else if (outcome === 'loss') losses++;
-      score += scoreDelta;
-      updatePills();
-
-      let msg;
-      if (outcome === 'win')            msg = `✅ ${side.toUpperCase()} win`;
-      else if (outcome === 'loss')      msg = `❌ ${side.toUpperCase()} loss`;
-      else if (outcome === 'breakeven') msg = `🟦 ${side.toUpperCase()} stopped at BE±2`;
-      else                              msg = `⏱️ Timeout (no exit within ${LOOKAHEAD_MAX} bars)`;
-      if (Number.isFinite(scoreDelta) && scoreDelta !== 0) {
-        msg += ` · Score ${scoreDelta >= 0 ? '+' : ''}${scoreDelta}`;
-      }
-      setMsg(msg);
-
-      // now allow Next
-      const nextBtn = document.getElementById('btnNext');
-      nextBtn.style.display = 'inline-block';
-      nextBtn.disabled = false;
-      return;
-    }
-
-    // extend the visible bars by one
-    const slice = r.bars.slice(startIdx, shownEnd);
-    candleSeries.setData(slice);
-    volumeSeries.setData(slice.map(b => ({
-      time: b.time,
-      value: Number.isFinite(b.volume) ? b.volume : 0
-    })));
-
-    lwcChart.timeScale().fitContent();
-    volumeChart.timeScale().fitContent();
-
-    // evaluate trailing trigger & exit checks at the *new* bar
-    const i = shownEnd - 1;
-    if (i >= r.entryIndex + 1) {
-      const b = r.bars[i];
-
-      // arm trail if not yet
-      if (!trailed) {
-        const hitTrig = side === 'long' ? (b.close >= trigger) : (b.close <= trigger);
-        if (hitTrig) {
-          trailed = true;
-          slActive = beTrail;
-          // move the SL line visually
-          if (slLine) candleSeries.removePriceLine(slLine);
-          slLine = candleSeries.createPriceLine({
-            price: slActive, color:'#ee6666', lineWidth:.2, lineStyle:0,
-            title: `SL ${trailed ? 'BE' : SL_POINTS}`
-          });
-        }
-      }
-
-      // if we just reached the resolve bar, pin the final frame next tick
-      if (i >= resolveIdx) {
-        shownEnd++; // let the interval terminate on next loop
-      }
-    }
-
-    shownEnd++;
-  }, 100);
-  sendBarsForTraining(r.bars.slice(0,r.entryIndex+1), entry, rewards).then((obj)=>{
-    document.getElementById('newAIPill').textContent = `New AI: ${obj.score.toFixed(3)}`;
-  });
-
-}
-
-
-function nextRound(){
-  if (animTimer) { clearInterval(animTimer); animTimer = null; }
-  roundIdx++;
-  if (roundIdx >= rounds.length){
-    setMsg("🎉 Finished all rounds. Reload or load a new file to continue.");
-    return;
-  }
-  showRound();
-}
-
-
-function clearOutcomeLines(){
-  [entryLine, tpLine, slLine].forEach(l => { if (l) { candleSeries.removePriceLine(l); }});
-  entryLine = tpLine = slLine = null;
-  candleSeries.setMarkers([]); 
-  entryMarker = null;
-}
-
-function drawEntryTP_SL(entry, side){
-  clearOutcomeLines();
-  entryLine = candleSeries.createPriceLine({
-    price: entry, color:'#6aa0ff', lineWidth:.2, lineStyle:0, title:`Entry ${entry.toFixed(2)}`
-  });
-  tpLine = candleSeries.createPriceLine({
-    price: side === 'long' ? entry + TP_POINTS : entry - TP_POINTS,
-    color:'#3ddc91', lineWidth:.2, lineStyle:2, title:`TP ${TP_POINTS}`
-  });
-  slLine = candleSeries.createPriceLine({
-    price: side === 'long' ? entry - SL_POINTS : entry + SL_POINTS,
-    color:'#ee6666', lineWidth:.2, lineStyle:2, title:`SL ${SL_POINTS}`
-  });
-  // entryLine = candleSeries.createPriceLine({
-  //   price: entry,
-  //   color:'#6666ee', lineWidth:2, lineStyle:0, title:`ENTRY ${entry}`
-  // });
-  // --- bright entry dot marker ---
-const bar = rounds[roundIdx].bars[rounds[roundIdx].entryIndex];
-if (bar && candleSeries) {
-  entryMarker = [{
-    time: bar.time,
-    position: side === 'long' ? 'belowBar' : 'aboveBar',
-    color: side === 'long' ? '#00ffcc' : '#ffcc00',
-    shape: 'circle',
-    size: 2,
-    text: 'ENTRY'
-  }];
-  candleSeries.setMarkers(entryMarker);
-}
-
-}
-
-function snapToTick(price){
-  const ticks = Math.round(price / TICK_SIZE);
-  return ticks * TICK_SIZE;
-}
-
-function isSessionTime(tsSec){
-  // tsSec is unix seconds already (normalizeBar does this)
-  const d = new Date(tsSec * 1000); // interpreted as local time
-  
-  // Local minutes-from-midnight
-  let minutesLocal = d.getHours() * 60 + d.getMinutes();
-  
-  // Shift into "session" timezone (e.g., ET) using the offset.
-  // Add 24h before modulo so negative offsets don't go negative.
-  let minutesSession = (minutesLocal + SESSION_TZ_OFFSET_MIN + 24*60) % (24*60);
-
-  // Now compare against *session* time (9:30–15:30)
-  return minutesSession >= (9*60 + 30) && minutesSession <= (15*60 + 30);
-}
 
 
 async function handleFile(text){
@@ -544,46 +319,7 @@ async function handleFile(text){
     for (const b of bars) {
       if (b.time !== lastT) { dedup.push(b); lastT = b.time; }
     }
-
-    rounds = [];
-
-    const minBarsNeeded = WINDOW_BACK + 1 + LOOKAHEAD_MAX;
-    if (dedup.length < minBarsNeeded) {
-      setMsg(`Not enough bars: have ${dedup.length}, need at least ${minBarsNeeded}. Export a larger range or lower WINDOW_BACK/LOOKAHEAD_MAX.`);
-      return;
-    }
-    const range = (dedup.length - LOOKAHEAD_MAX) - minBarsNeeded;
-
-    const TARGET_ROUNDS = 100;
-    let attempts = 0;
-
-    while (rounds.length < TARGET_ROUNDS && attempts < TARGET_ROUNDS * 20) {
-      attempts++;
-
-      const start = Math.round(Math.random() * range) + minBarsNeeded - (WINDOW_BACK + 1);
-      const entryIndex = WINDOW_BACK;
-      const mainEntryIndex = start + entryIndex;
-      const entryBar = dedup[mainEntryIndex];
-
-      if (!entryBar || !isSessionTime(entryBar.time)) continue; // ⬅ only pick 9:30–3:30 entries
-
-      const end   = start + (WINDOW_BACK + 1) + LOOKAHEAD_MAX;
-      const slice = dedup.slice(start, end);
-
-      const info = algo(slice, entryIndex);
-      info.mainEntryIndex = mainEntryIndex;
-      rounds.push(info);  // uses your precomputed outcomes
-    }
-
-    if (!rounds.length) {
-      setMsg("❗ No eligible rounds found between 9:30–3:30 in this file.");
-      return;
-    }
-
-    roundIdx = 0;
-    score = wins = losses = 0;
-    showRound();
-    setMsg(`Loaded ${rounds.length} session-only rounds from file (${dedup.length} bars total).`);
+    loadRandomDay();
   } catch (err) {
     console.error(err);
     setMsg("❗ Load error: " + err.message);
@@ -674,20 +410,18 @@ loadDefault();
 
 const API = "http://localhost:5000";
 
-async function sendBarsForTraining(bars, entry, rewards) {
-  const r = await fetch(`${API}/train`, {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ bars, entry, rewards })
+async function getAIScore(){
+  if(idx < 1) return;
+  const windowBars = bars.slice(Math.max(0, idx-100), idx+1);
+
+  const r = await fetch(`${API}/score`, {
+    method:"POST",
+    headers:{"Content-Type": "application/json"},
+    body:JSON.stringify({ bars: windowBars })
   });
-  return r.json();
+
+  const j = await r.json();
+  document.getElementById('pillAI').textContent = `AI: ${j.score.toFixed(2)}`;
 }
 
-async function getScore(bars) {
-  const r = await fetch(`${API}/score`, {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ bars })
-  });
-  return r.json(); // { score }
-}
+

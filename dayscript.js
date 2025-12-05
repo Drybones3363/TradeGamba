@@ -156,7 +156,7 @@ function init(){
       idx++;
       renderUpTo(idx);
       getAIScore();
-    }, 250);
+    }, 500);
   };
 
   // Pause
@@ -235,7 +235,7 @@ function updatePills(){
   document.getElementById('pillIndex').textContent = `Bar: ${idx}`;
   if(bars[idx])
     document.getElementById('pillTime').textContent =
-      `Time: ${new Date(bars[idx].time*1000).toLocaleTimeString()}`;
+      `Time: ${new Date((bars[idx].time+60*SESSION_TZ_OFFSET_MIN)*1000).toLocaleTimeString()}`;
 }
 
 function computeEMA(bars, period = 21) {
@@ -410,20 +410,18 @@ loadDefault();
 
 const API = "http://localhost:5000";
 
-async function sendBarsForTraining(bars, entry, rewards) {
-  const r = await fetch(`${API}/train`, {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ bars, entry, rewards })
+async function getAIScore(){
+  if(idx < 1) return;
+  const windowBars = bars.slice(Math.max(0, idx-100), idx+1);
+
+  const r = await fetch(`${API}/score`, {
+    method:"POST",
+    headers:{"Content-Type": "application/json"},
+    body:JSON.stringify({ bars: windowBars })
   });
-  return r.json();
+
+  const j = await r.json();
+  document.getElementById('pillAI').textContent = `AI: ${j.score.toFixed(2)}`;
 }
 
-async function getScore(bars) {
-  const r = await fetch(`${API}/score`, {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ bars })
-  });
-  return r.json(); // { score }
-}
+

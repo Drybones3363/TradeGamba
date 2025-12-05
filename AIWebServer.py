@@ -1,6 +1,6 @@
 
 
-MODEL_FILE = "BruteforceC"
+MODEL_FILE = "BruteforceE"
 
 
 from flask import Flask, request, jsonify, send_from_directory

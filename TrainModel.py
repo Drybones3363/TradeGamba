@@ -1,6 +1,6 @@
 DEBUG_MODE = False
-MODEL_FILE = "BruteforceC"
-CSV_FILE = "Replays/NQ-09-25.Last.csv"  # Change to your file
+MODEL_FILE = "BruteforceE"
+CSV_FILE = "Replays/NQ-12-25.Last.csv"  # Change to your file
 NUM_GENERATIONS = 100000
 NUM_TRAINS = 1000
 NEW_AI = False
@@ -10,6 +10,7 @@ TP_POINTS = 20.0
 SL_POINTS = 10.0
 TRAIL_TRIGGER = 7.0
 TRAIL_OFFSET = 2.0
+SESSION_TZ_OFFSET_MIN = -240
 
 WINDOW_BACK = 100
 LOOKAHEAD_MAX = 600
@@ -110,14 +111,12 @@ def trainModel(trialInfo):
         #print(oldActionOdds,newActionOdds)
 
 def is_session_time(timestamp_str):
-    """Check if timestamp is during trading session (9:30-15:30 EST)"""
-    try:
-        # Parse: 20250701 144500
-        dt = datetime.strptime(timestamp_str, "%Y%m%d %H%M%S")
-        minutes = dt.hour * 60 + dt.minute
-        return 600 <= minutes <= 930  # 10:00 to 15:30
-    except:
-        return True  # If can't parse, include it
+    d = datetime.fromtimestamp(timestamp_str)
+    minutes_local = d.hour * 60 + d.minute
+    minutes_session = (minutes_local + SESSION_TZ_OFFSET_MIN + 24*60) % (24*60)
+    if 571 <= minutes_session <= 961:  # 9:30 to 16:00
+        return True
+    return False
 
 def parse_csv(filename):
     """Parse CSV and return list of bars"""
@@ -212,16 +211,16 @@ def filterTrials(bars):
     ret = []
     while len(ret) < NUM_TRAINS:
         trialInfo = {}
-        start = int(np.round(np.random.rand() * barRange)) + minBarsNeeded - (WINDOW_BACK + 1)
-        entryIndex = start + WINDOW_BACK - 1
+        entryIndex = 0
         entry = 0
         priceMove = 0
         while priceMove <= 0 and entryIndex < len(bars):
-            entryIndex = entryIndex + 1
+            start = int(np.round(np.random.rand() * barRange)) + minBarsNeeded - (WINDOW_BACK + 1)
+            entryIndex = start + WINDOW_BACK - 1
             entryBar = bars[entryIndex]
-            entry = entryBar['close']
             if not is_session_time(entryBar['time']):
                 continue
+            entry = entryBar['close']
             priceMove = max(
                 abs(entry - bars[entryIndex+1]['close']),
                 abs(entry - bars[entryIndex+2]['close']),
@@ -260,7 +259,7 @@ def main():
         model.agent.save("Models/"+MODEL_FILE+".pkl")
         if (genNum+1) % 10000 == 0:
             model.agent.save("Models/"+MODEL_FILE+str(genNum+1)+".pkl")
-        logMsg("Generation",genNum,":\t",totalProfit,genInfo)
+        logMsg("Generation",genNum,":\t",totalProfit,np.round(totalProfit/(NUM_TRAINS-genInfo['none']),3),genInfo)
 
     logMsg("RESULTS! ==================")
     for genNum in range(NUM_GENERATIONS):
